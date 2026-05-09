@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مانیتورینگ گاز</title>
+    <style>
+        :root {
+            --bg-primary: #f5f5f5;
+            --bg-secondary: #ffffff;
+            --text-primary: #333333;
+            --text-secondary: #666666;
+            --border-color: #dddddd;
+            --shadow: rgba(0,0,0,0.1);
+            --safe-bg: #d4edda;
+            --safe-text: #155724;
+            --danger-bg: #f8d7da;
+            --danger-text: #721c24;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --border-color: #404040;
+            --shadow: rgba(0,0,0,0.3);
+            --safe-bg: #1e4620;
+            --safe-text: #90ee90;
+            --danger-bg: #4a1a1a;
+            --danger-text: #ff6b6b;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            direction: rtl;
+            margin: 20px;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: 0 2px 8px var(--shadow);
+            transition: all 0.3s;
+            z-index: 1000;
+        }
+
+        .theme-toggle:hover {
+            transform: scale(1.1);
+        }
+
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+            background: var(--bg-secondary);
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px var(--shadow);
+        }
+        
+        .dashboard {
+            display: none;
+        }
+        
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            font-size: 16px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        .unit-card {
+            background: var(--bg-secondary);
+            padding: 20px;
+            margin: 10px;
+            border-radius: 10px;
+            box-shadow: 0 0 5px var(--shadow);
+            display: inline-block;
+            min-width: 300px;
+        }
+        
+        .gas-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+        }
+        
+        .gas-safe {
+            background: var(--safe-bg);
+            color: var(--safe-text);
+        }
+        
+        .gas-danger {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+        }
+        
+        .status {
+            font-weight: bold;
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+        
+    .error {
+        color: #dc3545;
+        margin: 10px 0;
+        opacity: 0;
+        transform: translateY(-10px);
+        transition: opacity 0.3s, transform 0.3s;
+        text-align: center;
+        font-weight: bold;
+    }
+
+    .error.show {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    .error.hide {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+        
+        h1, h2 {
+            text-align: center;
+            color: var(--text-primary);
+        }
+        
+        .logout {
+            background: #dc3545;
+            width: auto;
+            padding: 5px 15px;
+            margin: 10px 0;
+        }
+        
+        .logout:hover {
+            background: #a71e2a;
+        }
+
+        .info-text {
+            margin-top: 20px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <!-- دکمه تغییر تم -->
+    <button class="theme-toggle" onclick="toggleTheme()" id="themeToggle">
+        🌙
+    </button>
+
+    <!-- صفحه ورود -->
+    <div id="login" class="login-container">
+        <h1>ورود به سیستم</h1>
+        <input type="text" id="username" placeholder="نام کاربری" onkeydown="if(event.key==='Enter') document.getElementById('password').focus()">
+        <input type="password" id="password" placeholder="رمز عبور" onkeydown="if(event.key==='Enter') login()">
+        <button onclick="login()">ورود</button>
+        <div id="error" class="error"></div>
+    </div>
+    
+    <!-- داشبورد -->
+    <div id="dashboard" class="dashboard">
+        <h1>سیستم مانیتورینگ گاز</h1>
+        <button class="logout" onclick="logout()">خروج</button>
+        <div id="gasDisplay"></div>
+    </div>
+
+    <script>
+        let ws;
+        let currentRole = null;
+
+        // مدیریت تم
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            const themeToggle = document.getElementById('themeToggle');
+            
+            html.setAttribute('data-theme', newTheme);
+            themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+            
+            // ذخیره تم در localStorage
+            localStorage.setItem('theme', newTheme);
+        }
+
+        // بارگذاری تم ذخیره شده
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            const html = document.documentElement;
+            const themeToggle = document.getElementById('themeToggle');
+            
+            html.setAttribute('data-theme', savedTheme);
+            themeToggle.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+        }
+
+        // بارگذاری تم هنگام لود صفحه
+        window.addEventListener('DOMContentLoaded', loadTheme);
+
+        function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            if (!username || !password) {
+                showError('لطفا همه فیلدها را پر کنید');
+                return;
+            }
+            
+            // اتصال به وب سوکت
+            ws = new WebSocket('ws://localhost:8080');
+            
+            ws.onopen = function() {
+                ws.send(JSON.stringify({
+                    type: 'login',
+                    username: username,
+                    password: password
+                }));
+            };
+            
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'login') {
+                    if (data.success) {
+                        currentRole = data.role;
+                        showDashboard();
+                        updateGasDisplay(data.gasStatus);
+                    } else {
+                        showError(data.message);
+                    }
+                } else if (data.type === 'update') {
+                    updateGasDisplay(data.gasStatus);
+                }
+            };
+            
+            ws.onerror = function() {
+                showError('خطا در اتصال به سرور');
+            };
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hide');
+            errorDiv.classList.add('show');
+            
+            setTimeout(() => {
+                errorDiv.classList.remove('show');
+                errorDiv.classList.add('hide');
+            }, 2000);
+        }
+
+
+        function showDashboard() {
+            document.getElementById('login').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+        }
+
+        function logout() {
+            if (ws) ws.close();
+            document.getElementById('login').style.display = 'block';
+            document.getElementById('dashboard').style.display = 'none';
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            document.getElementById('error').textContent = '';
+        }
+
+        function updateGasDisplay(gasStatus) {
+            const display = document.getElementById('gasDisplay');
+            let html = '';
+            
+            for (let unitKey in gasStatus) {
+                const unitNumber = unitKey === 'unit1' ? '1' : '2';
+                const gases = gasStatus[unitKey];
+                
+                html += `
+                    <div class="unit-card">
+                        <h2>واحد ${unitNumber}</h2>
+                        <div class="gas-item ${gases.MQ2 ? 'gas-danger' : 'gas-safe'}">
+                            <span>MQ2 (گاز قابل اشتعال)</span>
+                            <span class="status">${gases.MQ2 ? 'خطر!' : 'ایمن'}</span>
+                        </div>
+                        <div class="gas-item ${gases.MQ4 ? 'gas-danger' : 'gas-safe'}">
+                            <span>MQ4 (متان)</span>
+                            <span class="status">${gases.MQ4 ? 'خطر!' : 'ایمن'}</span>
+                        </div>
+                        <div class="gas-item ${gases.MQ9 ? 'gas-danger' : 'gas-safe'}">
+                            <span>MQ9 (گاز طبیعی)</span>
+                            <span class="status">${gases.MQ9 ? 'خطر!' : 'ایمن'}</span>
+                        </div><!DOCTYPE html>
+<html lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مانیتورینگ گاز</title>
+    <style>
+        :root {
+            --bg-primary: #f5f5f5;
+            --bg-secondary: #ffffff;
+            --text-primary: #333333;
+            --text-secondary: #666666;
+            --border-color: #dddddd;
+            --shadow: rgba(0,0,0,0.1);
+            --safe-bg: #d4edda;
+            --safe-text: #155724;
+            --danger-bg: #f8d7da;
+            --danger-text: #721c24;
+        }
+
+        [data-theme="dark"] {
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --border-color: #404040;
+            --shadow: rgba(0,0,0,0.3);
+            --safe-bg: #1e4620;
+            --safe-text: #90ee90;
+            --danger-bg: #4a1a1a;
+            --danger-text: #ff6b6b;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            direction: rtl;
+            margin: 20px;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: 0 2px 8px var(--shadow);
+            transition: all 0.3s;
+            z-index: 1000;
+        }
+
+        .theme-toggle:hover {
+            transform: scale(1.1);
+        }
+
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+            background: var(--bg-secondary);
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px var(--shadow);
+        }
+        
+        .dashboard {
+            display: none;
+        }
+        
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            font-size: 16px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        .unit-card {
+            background: var(--bg-secondary);
+            padding: 20px;
+            margin: 10px;
+            border-radius: 10px;
+            box-shadow: 0 0 5px var(--shadow);
+            display: inline-block;
+            min-width: 300px;
+        }
+        
+        .gas-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+        }
+        
+        .gas-safe {
+            background: var(--safe-bg);
+            color: var(--safe-text);
+        }
+        
+        .gas-danger {
+            background: var(--danger-bg);
+            color: var(--danger-text);
+        }
+        
+        .status {
+            font-weight: bold;
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+        
+    .error {
+        color: #dc3545;
+        margin: 10px 0;
+        opacity: 0;
+        transform: translateY(-10px);
+        transition: opacity 0.3s, transform 0.3s;
+        text-align: center;
+        font-weight: bold;
+    }
+
+    .error.show {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    .error.hide {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+        
+        h1, h2 {
+            text-align: center;
+            color: var(--text-primary);
+        }
+        
+        .logout {
+            background: #dc3545;
+            width: auto;
+            padding: 5px 15px;
+            margin: 10px 0;
+        }
+        
+        .logout:hover {
+            background: #a71e2a;
+        }
+
+        .info-text {
+            margin-top: 20px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <!-- دکمه تغییر تم -->
+    <button class="theme-toggle" onclick="toggleTheme()" id="themeToggle">
+        🌙
+    </button>
+
+    <!-- صفحه ورود -->
+    <div id="login" class="login-container">
+        <h1>ورود به سیستم</h1>
+        <input type="text" id="username" placeholder="نام کاربری" onkeydown="if(event.key==='Enter') document.getElementById('password').focus()">
+        <input type="password" id="password" placeholder="رمز عبور" onkeydown="if(event.key==='Enter') login()">
+        <button onclick="login()">ورود</button>
+        <div id="error" class="error"></div>
+    </div>
+    
+    <!-- داشبورد -->
+    <div id="dashboard" class="dashboard">
+        <h1>سیستم مانیتورینگ گاز</h1>
+        <button class="logout" onclick="logout()">خروج</button>
+        <div id="gasDisplay"></div>
+    </div>
+
+    <script>
+        let ws;
+        let currentRole = null;
+
+        // مدیریت تم
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            const themeToggle = document.getElementById('themeToggle');
+            
+            html.setAttribute('data-theme', newTheme);
+            themeToggle.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+            
+            // ذخیره تم در localStorage
+            localStorage.setItem('theme', newTheme);
+        }
+
+        // بارگذاری تم ذخیره شده
+        function loadTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            const html = document.documentElement;
+            const themeToggle = document.getElementById('themeToggle');
+            
+            html.setAttribute('data-theme', savedTheme);
+            themeToggle.textContent = savedTheme === 'dark' ? '☀️' : '🌙';
+        }
+
+        // بارگذاری تم هنگام لود صفحه
+        window.addEventListener('DOMContentLoaded', loadTheme);
+
+        function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            if (!username || !password) {
+                showError('لطفا همه فیلدها را پر کنید');
+                return;
+            }
+            
+            // اتصال به وب سوکت
+            ws = new WebSocket('ws://localhost:8080');
+            
+            ws.onopen = function() {
+                ws.send(JSON.stringify({
+                    type: 'login',
+                    username: username,
+                    password: password
+                }));
+            };
+            
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'login') {
+                    if (data.success) {
+                        currentRole = data.role;
+                        showDashboard();
+                        updateGasDisplay(data.gasStatus);
+                    } else {
+                        showError(data.message);
+                    }
+                } else if (data.type === 'update') {
+                    updateGasDisplay(data.gasStatus);
+                }
+            };
+            
+            ws.onerror = function() {
+                showError('خطا در اتصال به سرور');
+            };
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hide');
+            errorDiv.classList.add('show');
+            
+            setTimeout(() => {
+                errorDiv.classList.remove('show');
+                errorDiv.classList.add('hide');
+            }, 2000);
+        }
+
+
+        function showDashboard() {
+            document.getElementById('login').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+        }
+
+        function logout() {
+            if (ws) ws.close();
+            document.getElementById('login').style.display = 'block';
+            document.getElementById('dashboard').style.display = 'none';
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            document.getElementById('error').textContent = '';
+        }
+
+        function updateGasDisplay(gasStatus) {
+            const display = document.getElementById('gasDisplay');
+            let html = '';
+            
+            for (let unitKey in gasStatus) {
+                const unitNumber = unitKey === 'unit1' ? '1' : '2';
+                const gases = gasStatus[unitKey];
+                
+                html += `
+                    <div class="unit-card">
+                        <h2>واحد ${unitNumber}</h2>
+                        <div class="gas-item ${gases.MQ2 ? 'gas-danger' : 'gas-safe'}">
+                            <span>MQ2 (گاز قابل اشتعال)</span>
+                            <span class="status">${gases.MQ2 ? 'خطر!' : 'ایمن'}</span>
+                        </div>
+                        <div class="gas-item ${gases.MQ4 ? 'gas-danger' : 'gas-safe'}">
+                            <span>MQ4 (متان)</span>
+                            <span class="status">${gases.MQ4 ? 'خطر!' : 'ایمن'}</span>
+                        </div>
+                        <div class="gas-item ${gases.MQ9 ? 'gas-danger' : 'gas-safe'}">
+                            <span>MQ9 (گاز طبیعی)</span>
+                            <span class="status">${gases.MQ9 ? 'خطر!' : 'ایمن'}</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            display.innerHTML = html;
+        }
+
+        
+    </script>
+</body>
+</html>
+
+                    </div>
+                `;
+            }
+            
+            display.innerHTML = html;
+        }
+
+        
+    </script>
+</body>
+</html>
